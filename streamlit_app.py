@@ -1,469 +1,213 @@
 import streamlit as st
-import logging
-from app import AdvancedMovieRecommender
-from config import DISPLAY_GENRES, validate_config
-from auth import full_page_auth, add_favorite_ui, add_watchlist_ui, list_user_collections
+import pandas as pd
+import numpy as np
+from app import BookRecommender
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Page Configuration
+st.set_page_config(page_title="የመጽሐፍ ምክረ-ሀሳብ ሲስተም", page_icon="📚", layout="wide")
 
-# -------------------------
-# PAGE CONFIG
-# -------------------------
-st.set_page_config(
-    page_title="AI Movie Recommender",
-    page_icon="🎬",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# -------------------------
-# DARK THEME STYLING
-# -------------------------
-st.markdown(
-    """
-    <style>
-    :root {
-        color-scheme: dark;
-        supported-color-schemes: dark;
-    }
-
-    body, [data-testid='stAppViewContainer'], [data-testid='stSidebar'] {
-        background: linear-gradient(180deg, #050816 0%, #12182f 40%, #0b1220 100%) !important;
-        color: #f8fafc !important;
-    }
-
-    .movie-card {
-        background: rgba(15, 23, 42, 0.92);
-        border: 1px solid rgba(79, 70, 229, 0.24);
-        border-radius: 22px;
-        padding: 18px;
-        margin-bottom: 18px;
-        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
-        transition: transform 0.2s ease;
-    }
-
-    .movie-card:hover {
-        transform: translateY(-4px);
-    }
-
-    .score-badge {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        background: #4338ca;
-        color: #f8fafc;
-        padding: 6px 12px;
-        border-radius: 999px;
-        font-weight: 700;
-        font-size: 0.95rem;
-        margin-top: 8px;
-    }
-
-    .genre-badge {
-        background: rgba(99, 102, 241, 0.18);
-        color: #e0e7ff;
-        padding: 5px 12px;
-        border-radius: 999px;
-        font-size: 0.82rem;
-        margin: 4px 4px 4px 0;
-        display: inline-block;
-    }
-
-    .rating-stars {
-        color: #fde68a;
-        font-size: 1.05rem;
-        letter-spacing: 0.03rem;
-        margin: 0;
-    }
-
-    .stButton>button {
-        background: linear-gradient(135deg, #7c3aed, #2563eb) !important;
-        color: white !important;
-        border: none !important;
-        box-shadow: 0 10px 25px rgba(59, 130, 246, 0.24);
-    }
-
-    .stButton>button:hover {
-        background: linear-gradient(135deg, #5b21b6, #1d4ed8) !important;
-    }
-
-    [data-testid='stRadio'] label {
-        border-radius: 999px;
-        padding: 10px 20px;
-        margin-right: 8px;
-        border: 1px solid rgba(148, 163, 184, 0.24);
-        background: rgba(15, 23, 42, 0.95);
-        color: #cbd5e1;
-    }
-
-    [data-testid='stRadio'] input[type='radio']:checked + label {
-        background: linear-gradient(135deg, #7c3aed, #2563eb) !important;
-        color: white !important;
-        border-color: transparent !important;
-        box-shadow: 0 12px 24px rgba(59, 130, 246, 0.25);
-    }
-
-    /* Top nav - Netflix-style tab bar */
-    .top-nav {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        background: linear-gradient(90deg,#050406 0%, #0b0b0b 100%) !important;
-        padding: 8px 18px;
-        border-radius: 12px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-        margin-bottom: 14px;
-    }
-
-    .brand {
-        font-size: 1.25rem;
-        font-weight: 800;
-        color: #eef2ff;
-        padding-left: 6px;
-    }
-
-    .user-info {
-        color: #cbd5e1;
-        font-size: 0.95rem;
-        text-align: right;
-        padding-right: 6px;
-    }
-
-    [data-testid='stRadio'] {
-        display: flex !important;
-        gap: 6px;
-        align-items: center;
-        justify-content: center;
-        background: transparent !important;
-    }
-
-    [data-testid='stRadio'] label {
-        padding: 10px 14px;
-        border-radius: 6px;
-        color: #cbd5e1;
-        background: transparent;
-        font-weight: 700;
-        cursor: pointer;
-        transition: color 0.12s ease, transform 0.12s ease;
-        position: relative;
-    }
-
-    [data-testid='stRadio'] input[type='radio'] { display: none; }
-
-    [data-testid='stRadio'] label:hover { color: #fff; transform: translateY(-2px); }
-
-    [data-testid='stRadio'] input[type='radio']:checked + label {
-        color: #fff !important;
-    }
-
-    /* remove Streamlit default top padding on full-page views */
-    [data-testid='stAppViewContainer'] .main .block-container {
-        padding-top: 0px !important;
-        padding-bottom: 0px !important;
-    }
-    [data-testid='stAppViewContainer'] .main {
-        padding-top: 0px !important;
-    }
-
-    /* red underline indicator similar to Netflix */
-    [data-testid='stRadio'] input[type='radio']:checked + label::after {
-        content: '';
-        position: absolute;
-        left: 10%;
-        right: 10%;
-        bottom: -10px;
-        height: 4px;
-        background: linear-gradient(90deg, #e50914, #ff3b3b);
-        border-radius: 4px;
-        box-shadow: 0 6px 22px rgba(229, 9, 20, 0.25);
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
+# Initialize and Cache the Recommender Engine for ultra-fast load
 @st.cache_resource
-def load_model():
-    try:
-        with st.spinner("🔄 Initializing AI model and loading data..."):
-            model = AdvancedMovieRecommender()
-            model.run_pipeline()
-            logger.info("Model loaded successfully")
-            return model
-    except Exception as e:
-        logger.error(f"Error loading model: {e}")
-        st.error(f"❌ Failed to initialize the recommendation engine: {e}")
-        return None
+def load_recommender():
+    engine = BookRecommender()
+    engine.run_pipeline()
+    return engine
 
-is_valid, message = validate_config()
-if not is_valid:
-    st.sidebar.warning(f"⚠️ {message}. Posters may not load.")
-
-model = load_model()
-if model is None:
-    st.stop()
-
-# -------------------------
-# AUTHENTICATION (full-page)
-# -------------------------
-if "user" not in st.session_state:
-    st.session_state.user = None
-
-if not st.session_state.user:
-    full_page_auth()
-
-if not st.session_state.user:
-    st.stop()
-
-current_user = st.session_state.user
-user_uid = current_user.get("localId") if current_user else None
-
-# navigation state default
-if "page" not in st.session_state:
-    st.session_state.page = "Home"
-
-# Top navigation bar container (styled as Netflix-like tabs)
-nav_options = ["Home", "Browse Movies", "My Favorites", "Watchlist", "Account"]
-with st.container():
-    cols = st.columns([1, 6, 2])
-    with cols[0]:
-        st.markdown("<div class='brand'>🎬 AI Movie Recommender</div>", unsafe_allow_html=True)
-    with cols[1]:
-        current_page = st.radio(
-            "",
-            nav_options,
-            index=nav_options.index(st.session_state.page) if st.session_state.page in nav_options else 0,
-            horizontal=True,
-            label_visibility="collapsed",
-            key="nav_radio",
-        )
-        st.session_state.page = current_page
-    with cols[2]:
-        st.markdown(f"<div class='user-info'>✓ Signed in</div>", unsafe_allow_html=True)
-
-st.markdown("<hr style='border:1px solid rgba(148, 163, 184, 0.08); margin-top:6px; margin-bottom:20px;'/>", unsafe_allow_html=True)
-
-# Sidebar controls (shared)
-st.sidebar.header("🛠️ Recommendation Controls")
-user_id = st.sidebar.number_input(
-    "User ID",
-    min_value=1,
-    max_value=943,
-    value=42,
-    help="Choose a user ID to personalize recommendations"
-)
-
-top_n = st.sidebar.slider(
-    "Number of results",
-    min_value=1,
-    max_value=12,
-    value=6,
-    help="Select how many recommended movies to display"
-)
-
-min_score = st.sidebar.slider(
-    "Minimum score",
-    min_value=0.0,
-    max_value=10.0,
-    value=0.0,
-    step=0.1,
-    help="Only show movies with score above this threshold"
-)
-
-selected_genre = st.sidebar.selectbox(
-    "Genre filter",
-    ["All"] + DISPLAY_GENRES,
-    help="Use genre filtering to narrow results"
-)
-
-search_query = st.sidebar.text_input(
-    "Search movies",
-    placeholder="Type a movie name...",
-    help="Search recommendation titles by keyword"
-)
-
-# Page renderers
-
-def render_home():
-    st.markdown(
-        """
-        <div style='padding: 18px; background: rgba(30, 41, 59, 0.85); border-radius: 24px; border: 1px solid rgba(148, 163, 184, 0.18);'>
-            <p style='margin:0; font-size:0.95rem; color:#c7d2fe;'>AI Recommendations • Dark UI • Movie posters • Search & filters</p>
-            <h1 style='margin:0.35rem 0 0; font-size:2.8rem; color:#eef2ff;'>🎬 Discover Your Next Favorite Movie</h1>
-            <p style='margin:10px 0 0; color:#cbd5e1; font-size:1rem;'>Personalized, AI-powered movie recommendations with poster cards, genre tags, and a modern dark interface.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.subheader("⭐ Most Popular Movies")
-    popular_count = st.slider(
-        "Show top popular movies",
-        min_value=6,
-        max_value=18,
-        value=12,
-        key="popular_count"
-    )
-
-    if st.button("Load Popular Movies", key="load_pop_home"):
-        with st.spinner("Loading popular movies..."):
-            try:
-                popular = model.get_popular_movies(top_n=popular_count)
-                cols = st.columns(3, gap="large")
-                for idx, movie in enumerate(popular):
-                    with cols[idx % 3]:
-                        st.markdown("<div class='movie-card'>", unsafe_allow_html=True)
-                        if movie.get("poster"):
-                            st.image(movie["poster"], use_container_width=True)
-                        st.markdown(f"<h3 style='margin: 12px 0 6px; color:#eef2ff;'>{movie['title']}</h3>", unsafe_allow_html=True)
-                        if movie["genres"]:
-                            genres_html = "".join(
-                                f"<span class='genre-badge'>{genre}</span>"
-                                for genre in movie["genres"]
-                            )
-                            st.markdown(genres_html, unsafe_allow_html=True)
-                        else:
-                            st.markdown("<p style='color:#94a3b8;'>Genre data unavailable</p>", unsafe_allow_html=True)
-                        if user_uid:
-                            fav_key = f"fav_pop_{user_uid}_{movie['movie_id']}_{idx}"
-                            wl_key = f"wl_pop_{user_uid}_{movie['movie_id']}_{idx}"
-                            if st.button("❤ Favorite", key=fav_key):
-                                add_favorite_ui(user_uid, movie)
-                            if st.button("➕ Watchlist", key=wl_key):
-                                add_watchlist_ui(user_uid, movie)
-
-                        st.markdown("</div>", unsafe_allow_html=True)
-            except Exception as e:
-                logger.error(f"Could not load popular movies: {e}")
-                st.error(f"❌ {e}")
-
-
-def render_recommendations():
-    st.subheader("🎯 AI Recommendation Preview")
-    st.write("Customize filters on the left and click the button below to generate a polished movie list with posters, ratings, and genres.")
-    if st.button("Generate AI Recommendations", key="gen_recs"):
-        with st.spinner("✨ Generating personalized recommendations..."):
-            try:
-                recs = model.recommend_movies(user_id, top_n=50)
-                filtered = []
-
-                for movie in recs:
-                    if movie["predicted_score"] < min_score:
-                        continue
-                    if selected_genre != "All" and selected_genre not in movie["genres"]:
-                        continue
-                    if search_query and search_query.lower() not in movie["title"].lower():
-                        continue
-                    filtered.append(movie)
-
-                if not filtered:
-                    st.warning("No matching movies found. Try changing the filters or search term.")
-                else:
-                    st.success(f"Found {len(filtered[:top_n])} AI-driven recommendations")
-                    cols = st.columns(3, gap="large")
-                    for idx, movie in enumerate(filtered[:top_n]):
-                        with cols[idx % 3]:
-                            st.markdown("<div class='movie-card'>", unsafe_allow_html=True)
-                            if movie.get("poster"):
-                                st.image(movie["poster"], use_container_width=True)
-                            st.markdown(f"<h3 style='margin: 12px 0 6px; color:#eef2ff;'>{movie['title']}</h3>", unsafe_allow_html=True)
-                            score = movie["predicted_score"]
-                            score_label = f"AI Score: {score:.2f}"
-                            st.markdown(f"<div class='score-badge'>{score_label}</div>", unsafe_allow_html=True)
-                            pseudo_rating = min(5, max(0, score / 2))
-                            stars = "★" * int(pseudo_rating) + "☆" * (5 - int(pseudo_rating))
-                            st.markdown(f"<p class='rating-stars'>{stars}</p>", unsafe_allow_html=True)
-                            if movie["genres"]:
-                                genres_html = "".join(
-                                    f"<span class='genre-badge'>{genre}</span>"
-                                    for genre in movie["genres"]
-                                )
-                                st.markdown(genres_html, unsafe_allow_html=True)
-                            else:
-                                st.markdown("<p style='color:#94a3b8;'>Genre data unavailable</p>", unsafe_allow_html=True)
-                            if user_uid:
-                                fav_key = f"fav_{user_uid}_{movie['movie_id']}_{idx}"
-                                wl_key = f"wl_{user_uid}_{movie['movie_id']}_{idx}"
-                                if st.button("❤ Favorite", key=fav_key):
-                                    add_favorite_ui(user_uid, movie)
-                                if st.button("➕ Watchlist", key=wl_key):
-                                    add_watchlist_ui(user_uid, movie)
-
-                            st.markdown("</div>", unsafe_allow_html=True)
-                    with st.expander("How this AI recommendation works"):
-                        st.write(
-                            "The system uses item-based collaborative filtering to compare movies watched by the selected user with similar titles in the MovieLens dataset. "
-                            "Recommendations are ranked by similarity score and shown alongside poster art, genre tags, and an AI-generated score."
-                        )
-            except Exception as e:
-                logger.error(f"Recommendation generation failed: {e}")
-                st.error(f"❌ Failed to generate recommendations: {e}")
-
-
-def render_favorites():
-    st.header("❤ Your Favorites")
-    favs = list_user_collections(user_uid)[0]
-    if not favs:
-        st.info("You have no favorites yet. Add some from Recommendations or Popular Movies.")
+try:
+    recommender = load_recommender()
+    
+    # Sidebar Selection
+    st.sidebar.header("⚙️ የተጠቃሚ መቆጣጠሪያ")
+    
+    # Theme Configuration (Light vs Dark Mode)
+    theme_choice = st.sidebar.selectbox("🎨 የመተግበሪያው ገጽታ (Theme)፦", ["Light Mode ☀️", "Dark Mode 🌙"])
+    
+    # Set dynamic colors based on theme selection (True Deep Colors)
+    if theme_choice == "Dark Mode 🌙":
+        bg_color = "#0B0F19"       # Deep Dark Space Blue
+        card_bg = "#111827"        # Dark Card Grey/Blue
+        text_main = "#F9FAFB"      # Crisp White
+        text_sub = "#9CA3AF"       # Muted Grey
+        border_color = "#374151"   # Slate Border
+        badge_bg = "#1E1B4B"       # Deep Purple/Indigo
+        badge_text = "#C7D2FE"     # Light Indigo Text
+        input_info = "#1F2937"     # Info Box Dark
     else:
-        cols = st.columns(3, gap="large")
-        for idx, movie in enumerate(favs):
-            with cols[idx % 3]:
-                st.markdown("<div class='movie-card'>", unsafe_allow_html=True)
-                if movie.get("poster"):
-                    st.image(movie["poster"], use_container_width=True)
-                st.markdown(f"<h3 style='margin: 12px 0 6px; color:#eef2ff;'>{movie.get('title','Untitled')}</h3>", unsafe_allow_html=True)
-                st.markdown("</div>", unsafe_allow_html=True)
+        bg_color = "#F8FAFC"       # Clean Slate White
+        card_bg = "#FFFFFF"        # Pure White Card
+        text_main = "#0F172A"      # Dark Charcoal Text
+        text_sub = "#64748B"       # Slate Muted Text
+        border_color = "#E2E8F0"   # Light Border
+        badge_bg = "#FEF3C7"       # Amber Yellow Badge
+        badge_text = "#B45309"     # Dark Amber Text
+        input_info = "#EFF6FF"     # Light Blue Info Box
 
+    # Premium Modern UI Styling with Dynamic Themes & Streamlit Menu Cleaner
+    st.markdown(f"""
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        /* 1. HIDING STREAMLIT DEFAULT MENU & DEPLOY BUTTONS */
+        #MainMenu {{visibility: hidden;}}
+        footer {{visibility: hidden;}}
+        header {{visibility: hidden;}}
+        .stDeployButton {{display:none !important;}}
+        
+        /* 2. Global Styles */
+        * {{ font-family: 'Inter', sans-serif; }}
+        .stApp {{ background-color: {bg_color} !important; color: {text_main} !important; }}
+        
+        /* 3. Titles */
+        .main-title {{ font-size: 38px !important; font-weight: 800; color: {text_main}; text-align: center; margin-bottom: 5px; letter-spacing: -0.5px; }}
+        .sub-title {{ font-size: 15px; color: {text_sub}; text-align: center; margin-bottom: 35px; }}
+        h3 {{ color: {text_main} !important; }}
+        
+        /* 4. Left Column: User History Cards */
+        .history-card {{ background: {card_bg}; padding: 16px; border-radius: 12px; border: 1px solid {border_color}; margin-bottom: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }}
+        .history-title {{ font-size: 16px !important; font-weight: 600; color: {text_main}; }}
+        .history-author {{ font-size: 13px; color: {text_sub}; margin-top: 2px; }}
+        .rating-badge {{ display: inline-flex; align-items: center; background-color: {badge_bg}; color: {badge_text}; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-top: 10px; }}
+        
+        /* 5. Right Column: AI Recommendation Grid (Fixed Uniform Heights) */
+        .rec-grid-card {{ background: {card_bg}; border: 1px solid {border_color}; padding: 16px; border-radius: 16px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); display: flex; flex-direction: column; justify-content: space-between; height: 460px; margin-bottom: 20px; }}
+        .img-container {{ height: 200px; overflow: hidden; border-radius: 10px; margin-bottom: 12px; display: flex; justify-content: center; align-items: center; background: {border_color}; }}
+        .img-container img {{ max-height: 100%; object-fit: cover; }}
+        .rec-title {{ font-size: 16px !important; font-weight: 700; color: {text_main}; line-height: 1.3; height: 42px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }}
+        .rec-author {{ font-size: 13px; color: {text_sub}; margin-top: 4px; height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+        .score-badge {{ font-size: 12px; color: #059669; font-weight: 600; background: #ECFDF5; padding: 4px 8px; border-radius: 6px; display: inline-block; margin-top: 8px; }}
+        
+        /* 6. Read Button Link */
+        .read-btn {{ display: block; text-align: center; margin-top: auto; padding: 10px 16px; background-color: #2563EB; color: white !important; text-decoration: none; border-radius: 10px; font-size: 13px; font-weight: 600; box-shadow: 0 2px 4px rgba(37,99,235,0.2); transition: all 0.2s ease; }}
+        .read-btn:hover {{ background-color: #1D4ED8; box-shadow: 0 4px 8px rgba(29,78,216,0.3); text-decoration: none; }}
+        
+        /* 7. Custom Alert Messages */
+        .info-msg {{ background-color: {input_info}; color: {text_main}; padding: 15px; border-radius: 10px; font-size: 14px; margin-bottom: 15px; border-left: 4px solid #3B82F6; }}
+        </style>
+    """, unsafe_allow_html=True)
 
-def render_watchlist():
-    st.header("➕ Your Watchlist")
-    wl = list_user_collections(user_uid)[1]
-    if not wl:
-        st.info("Your watchlist is empty. Add movies to watch later.")
+    st.markdown('<div class="main-title">📚 Smart Book Recommendation System</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">ይህ መተግበሪያ የእርስዎን ምርጫ መሰረት በማድረግ ምርጥ መጽሐፍትን በ AI cosine similarity ሂሳባዊ ቀመር ይመክራል።</div>', unsafe_allow_html=True)
+    st.markdown("---")
+
+    if "custom_ratings" not in st.session_state:
+        st.session_state.custom_ratings = {}
+
+    mode = st.sidebar.radio("የመተግበሪያው ሁነታ (Mode)፦", ["በዳታሴት ተጠቃሚዎች ይሞክሩ", "አዲስ ተጠቃሚ ይፍጠሩ (ይፈልጉ እና ደረጃ ይስጡ)"])
+
+    if mode == "በዳታሴት ተጠቃሚዎች ይሞክሩ":
+        available_users = sorted(recommender.ratings_df["User-ID"].unique())
+        selected_user = st.sidebar.selectbox("እባክዎ የተጠቃሚ ID ይምረጡ፡", available_users)
+        
+        user_ratings = recommender.ratings_df[recommender.ratings_df["User-ID"] == selected_user]
+        user_books = pd.merge(user_ratings, recommender.books_df, on="ISBN")
     else:
-        cols = st.columns(3, gap="large")
-        for idx, movie in enumerate(wl):
-            with cols[idx % 3]:
-                st.markdown("<div class='movie-card'>", unsafe_allow_html=True)
-                if movie.get("poster"):
-                    st.image(movie["poster"], use_container_width=True)
-                st.markdown(f"<h3 style='margin: 12px 0 6px; color:#eef2ff;'>{movie.get('title','Untitled')}</h3>", unsafe_allow_html=True)
-                st.markdown("</div>", unsafe_allow_html=True)
+        selected_user = 9999  
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🔍 አዲስ መጽሐፍ ይፈልጉ")
+        
+        search_query = st.sidebar.text_input("የመጽሐፍ ስም ይጻፉ፦", "")
+        
+        all_books_list = recommender.books_df["Book-Title"].unique()
+        filtered_books = [b for b in all_books_list if search_query.lower() in b.lower()] if search_query else []
+        
+        if filtered_books:
+            chosen_book_title = st.sidebar.selectbox("የፈለጉትን መጽሐፍ ይምረጡ፦", filtered_books)
+            rating_value = st.sidebar.slider("ለዚህ መጽሐፍ የሚሰጡት ደረጃ (⭐)፦", 1, 10, 8)
+            
+            if st.sidebar.button("ደረጃውን መዝግብ (Add Rating)"):
+                chosen_isbn = recommender.books_df[recommender.books_df["Book-Title"] == chosen_book_title]["ISBN"].values[0]
+                st.session_state.custom_ratings[chosen_isbn] = rating_value
+                st.sidebar.success(f"📌 '{chosen_book_title}' በተሳካ ሁኔታ ተመዝግቧል!")
+        elif search_query:
+            st.sidebar.caption("❌ ተመሳሳይ መጽሐፍ አልተገኘም")
 
+        if st.session_state.custom_ratings and st.sidebar.button("የሰጡትን ደረጃዎች በሙሉ አጽዳ (Reset)"):
+            st.session_state.custom_ratings = {}
+            st.rerun()
 
-def render_profile():
-    st.header("👤 Profile")
-    st.write("✓ You are signed in")
-    if st.button("Sign out"):
-        st.session_state.user = None
-        st.session_state.page = "Home"
+        custom_rows = []
+        for isbn, rate in st.session_state.custom_ratings.items():
+            b_row = recommender.books_df[recommender.books_df["ISBN"] == isbn]
+            if not b_row.empty:
+                custom_rows.append({
+                    "User-ID": selected_user,
+                    "ISBN": isbn,
+                    "Book-Rating": rate,
+                    "Book-Title": b_row["Book-Title"].values[0],
+                    "Book-Author": b_row["Book-Author"].values[0] if "Book-Author" in b_row.columns else "Unknown"
+                })
+        user_books = pd.DataFrame(custom_rows)
 
-# Router
-page = st.session_state.page
+        if not user_books.empty:
+            recommender.ratings_df = recommender.ratings_df[recommender.ratings_df["User-ID"] != 9999]
+            recommender.ratings_df = pd.concat([recommender.ratings_df, user_books[["User-ID", "ISBN", "Book-Rating"]]], ignore_index=True)
+            recommender.prepare_matrices()
+            recommender.train()
 
-if page == "Home":
-    render_home()
-elif page == "Browse Movies":
-    render_recommendations()
-elif page == "My Favorites":
-    render_favorites()
-elif page == "Watchlist":
-    render_watchlist()
-elif page == "Account":
-    render_profile()
-else:
-    st.write("Page not found")
+    num_recommendations = st.sidebar.slider("የሚመከሩ መጽሐፍት ብዛት፡", min_value=1, max_value=10, value=5)
 
-st.markdown("---")
-st.markdown(
-    """
-    <div style='text-align:center; color:#cbd5e1; font-size:0.95rem;'>
-        <p>AI Movie Recommendation System • Dark UI • Poster cards • Search & filters</p>
-        <p>MovieLens 100K dataset | Item-based K-NN collaborative filtering</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+    # Main UI Layout
+    col1, col2 = st.columns([1, 2], gap="large")
+
+    with col1:
+        st.subheader("📖 ያነበቧቸው መጽሐፍት ታሪክ")
+        if not user_books.empty:
+            for idx, row in user_books.iterrows():
+                st.markdown(f"""
+                    <div class='history-card'>
+                        <div class='history-title'>🔹 {row['Book-Title']}</div>
+                        <div class='history-author'>ደራሲ፦ {row['Book-Author']}</div>
+                        <div class='rating-badge'>⭐ {row['Book-Rating']} / 10</div>
+                    </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='info-msg'>💡 እባክዎ በግራ በኩል መጽሐፍ ፈልገው ደረጃ በመስጠት ምርጫዎትን ያክሉ!</div>", unsafe_allow_html=True)
+
+    with col2:
+        st.subheader("✨ የተመረጡ አዳዲስ የ AI መጽሐፍ ምክረ-ሀሳቦች")
+        
+        if mode == "አዲስ ተጠቃሚ ይፍጠሩ (ይፈልጉ እና ደረጃ ይስጡ)" and len(st.session_state.custom_ratings) == 0:
+            st.markdown("<div class='info-msg'>👋 መጽሐፍትን ለመምከር መጀመሪያ በግራ በኩል ቢያንስ ለአንድ መጽሐፍ ደረጃ መስጠት አለብዎት።</div>", unsafe_allow_html=True)
+        else:
+            with st.spinner("ምርጥ መጽሐፍትን በማስላት ላይ..."):
+                recommendations = recommender.recommend_books(user_id=int(selected_user), top_n=num_recommendations)
+                
+            if recommendations:
+                cols = st.columns(3)
+                for i, book in enumerate(recommendations):
+                    col_idx = i % 3
+                    with cols[col_idx]:
+                        fallback_cover = "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=150&auto=format&fit=crop&q=60"
+                        
+                        if "Harry Potter" in book['title']:
+                            fallback_cover = "https://images.unsplash.com/photo-1618666012174-83b441c0bc76?w=150&auto=format&fit=crop&q=60"
+                        elif "Hobbit" in book['title'] or "1984" in book['title']:
+                            fallback_cover = "https://images.unsplash.com/photo-1461360370896-922624d12aa1?w=150&auto=format&fit=crop&q=60"
+                        elif "Gatsby" in book['title']:
+                            fallback_cover = "https://images.unsplash.com/photo-1512820790803-83ca734da794?w=150&auto=format&fit=crop&q=60"
+                        elif "Sapiens" in book['title'] or "Educated" in book['title']:
+                            fallback_cover = "https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=150&auto=format&fit=crop&q=60"
+
+                        # Create clean title link for online library search
+                        clean_title = book['title'].split(" Vol")[0].replace(' ', '+')
+                        search_url = f"https://openlibrary.org/search?q={clean_title}"
+
+                        # Dynamic HTML Injector for exact uniform spacing structure
+                        st.markdown(f"""
+                            <div class='rec-grid-card'>
+                                <div class='img-container'>
+                                    <img src='{fallback_cover}'>
+                                </div>
+                                <div class='rec-title'>{book['title']}</div>
+                                <div class='rec-author'>ደራሲ፦ {book['author']}</div>
+                                <div>
+                                    <span class='score-badge'>🎯 ተዛማጅነት፦ {book['score']:.4f}</span>
+                                </div>
+                                <a href='{search_url}' target='_blank' class='read-btn'>📖 መጽሐፉን ያንብቡ</a>
+                            </div>
+                        """, unsafe_allow_html=True)
+            else:
+                st.info("ለዚህ ተጠቃሚ የሚሆን ምክረ-ሀሳብ ማግኘት አልተቻለም።")
+
+except Exception as e:
+    st.error(f"መተግበሪያውን በማስነሳት ላይ ስህተት አጋጥሟል፦ {e}")
